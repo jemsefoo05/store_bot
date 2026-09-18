@@ -3,10 +3,10 @@ import telebot
 from telebot import types
 from flask import Flask, request
 import sqlite3
+import threading
 
 # ==================== الإعدادات ====================
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', '123456789'))
 ENV = os.environ.get('ENV', 'production')
 
@@ -166,27 +166,33 @@ def save_product(message, name, price, desc, category):
     conn.commit()
     bot.send_message(message.chat.id, f"✅ تمت إضافة '{name}' بنجاح!")
 
-# ==================== Webhook لـ Render ====================
-@app.route(f'/{BOT_TOKEN}', methods=['POST'])
-def webhook():
-    update = types.Update.de_json(request.get_json(force=True))
-    bot.process_new_updates([update])
-    return '', 200
-
+# ==================== صفحات Flask (للصحة والإيقاظ) ====================
 @app.route('/')
 def home():
-    return "Bot is running! 🤖"
+    return "Bot is running via POLLING! 🤖"
 
-# تفعيل الـ Webhook تلقائياً عند تشغيل Render
-if ENV == 'production' and BOT_TOKEN and WEBHOOK_URL:
-    try:
-        bot.remove_webhook()
-        bot.set_webhook(url=f'{WEBHOOK_URL}/{BOT_TOKEN}')
-        print("✅ Webhook set successfully")
-    except Exception as e:
-        print(f"❌ Webhook error: {e}")
+@app.route('/health')
+def health():
+    return "OK", 200
 
+# ==================== وضع التطوير المحلي ====================
 if __name__ == '__main__':
     if ENV == 'development':
+        print("🟢 Local polling mode...")
         bot.remove_webhook()
         bot.infinity_polling()
+
+# ==================== وضع الإنتاج: Polling في خيط خلفي ====================
+def run_polling():
+    try:
+        # مهم جداً: إزالة الـ webhook وإلا لن تصل الرسائل للـ polling
+        bot.remove_webhook()
+        print("🔄 Polling thread started (webhook removed)")
+        bot.polling(none_stop=True, interval=0, timeout=60)
+    except Exception as e:
+        print("❌ Polling error:", e)
+
+if ENV == 'production' and BOT_TOKEN:
+    t = threading.Thread(target=run_polling, daemon=True)
+    t.start()
+    print("🚀 Production: polling launched in background thread")
