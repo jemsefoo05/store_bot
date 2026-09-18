@@ -182,17 +182,34 @@ if __name__ == '__main__':
         bot.remove_webhook()
         bot.infinity_polling()
 
-# ==================== وضع الإنتاج: Polling في خيط خلفي ====================
+# ==================== وضع الإنتاج: حذف webhook أولاً ثم Polling ====================
+import time
+
+def ensure_no_webhook():
+    for attempt in range(6):
+        try:
+            bot.remove_webhook()
+            info = bot.get_webhook_info()
+            if not info.url:
+                print("✅ Webhook fully removed (url is empty)")
+                return True
+            print(f"⚠️ Webhook still set ({info.url}), retry {attempt+1}...")
+        except Exception as e:
+            print(f"⚠️ remove_webhook error on attempt {attempt+1}: {e}")
+        time.sleep(2)
+    print("❌ Could not remove webhook after retries")
+    return False
+
 def run_polling():
     try:
-        # مهم جداً: إزالة الـ webhook وإلا لن تصل الرسائل للـ polling
-        bot.remove_webhook()
-        print("🔄 Polling thread started (webhook removed)")
+        print("🔄 Starting polling thread...")
         bot.polling(none_stop=True, interval=0, timeout=60)
     except Exception as e:
         print("❌ Polling error:", e)
 
 if ENV == 'production' and BOT_TOKEN:
+    ensure_no_webhook()      # حذف موثوق في الخيط الرئيسي (يمنع 409)
+    time.sleep(1)
     t = threading.Thread(target=run_polling, daemon=True)
     t.start()
     print("🚀 Production: polling launched in background thread")
