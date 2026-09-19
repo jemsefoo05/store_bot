@@ -1,12 +1,12 @@
 from telebot import types
-from config import bot, get_conn, get_setting, fmt_price, is_admin, ADMIN_ID
+from config import bot, get_conn, get_setting, fmt_price, ADMIN_ID
 
-# ==================== واجهة الزبون ====================
+# ==================== واجهة الزبون (نص عادي محصّن) ====================
 @bot.message_handler(commands=['start'])
 def start(message):
     shop_name = get_setting('shop_name', 'المتجر')
     welcome = get_setting('welcome_text',
-        f"أهلاُ بك {message.from_user.first_name} في {shop_name}! 🎉\nاختر من القائمة:")
+        f"أهلاُ بك {message.from_user.first_name} في {shop_name}!\nاختر من القائمة:")
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(types.KeyboardButton('📂 الأقسام'),
                types.KeyboardButton('🛒 السلة'),
@@ -46,11 +46,11 @@ def show_products(call):
     for pid, nm, pr, ds, ph in prods:
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("➕ إضافة للسلة", callback_data=f"add_{pid}"))
-        caption = f"*{nm}*\n💰 السعر: {fmt_price(pr)}$\n📝 {ds or ''}"
+        caption = f"{nm}\n💰 السعر: {fmt_price(pr)}$\n📝 {ds or ''}"
         if ph:
-            bot.send_photo(call.message.chat.id, ph, caption=caption, parse_mode='Markdown', reply_markup=markup)
+            bot.send_photo(call.message.chat.id, ph, caption=caption, reply_markup=markup)
         else:
-            bot.send_message(call.message.chat.id, caption, parse_mode='Markdown', reply_markup=markup)
+            bot.send_message(call.message.chat.id, caption, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_'))
 def add_to_cart(call):
@@ -72,17 +72,17 @@ def show_cart(message):
         items = cur.fetchall()
     if not items:
         return bot.send_message(uid, "🛒 السلة فارغة.")
-    text = "🛒 *محتويات السلة:*\n\n"
+    text = "🛒 محتويات السلة:\n\n"
     total = 0
     for nm, pr, q in items:
         sub = float(pr) * q
         text += f"▪️ {nm} | {q}x = {fmt_price(sub)}$\n"
         total += sub
-    text += f"\n💵 *الإجمالي: {fmt_price(total)}$*"
+    text += f"\n💵 الإجمالي: {fmt_price(total)}$"
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(types.InlineKeyboardButton("✅ إتمام الشراء", callback_data="checkout"),
                types.InlineKeyboardButton("🗑 تفريغ", callback_data="clear_cart"))
-    bot.send_message(uid, text, parse_mode='Markdown', reply_markup=markup)
+    bot.send_message(uid, text, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'clear_cart')
 def clear_cart(call):
@@ -108,25 +108,24 @@ def checkout(call):
     total = sum(float(i[1]) * i[2] for i in items)
     pay_note = get_setting('payment_note', '💳 لإتمام الدفع، تواصل مع الإدارة.')
     pay_link = get_setting('payment_link', '')
-    order = f"🔔 *طلب جديد!*\n\n👤 [{call.message.chat.first_name}](tg://user?id={uid})\n🆔 `{uid}`\n\n📦 *المنتجات:*\n"
+    order = f"🔔 طلب جديد!\n\n👤 {call.message.chat.first_name}\n🆔 {uid}\n\n📦 المنتجات:\n"
     for nm, pr, q in items:
         order += f"- {nm} ({q}x) = {fmt_price(float(pr)*q)}$\n"
-    order += f"\n💰 *الإجمالي: {fmt_price(total)}$*"
+    order += f"\n💰 الإجمالي: {fmt_price(total)}$"
     try:
-        bot.send_message(ADMIN_ID, order, parse_mode='Markdown')
+        bot.send_message(ADMIN_ID, order)
     except Exception as e:
         print('admin notify err', e)
-    reply = f"✅ تم تسجيل طلبك يا {call.message.chat.first_name}! 🎉\nالإجمالي: *{fmt_price(total)}$*\n\n{pay_note}"
-    markup = None
+    reply = f"✅ تم تسجيل طلبك يا {call.message.chat.first_name}!\nالإجمالي: {fmt_price(total)}$\n\n{pay_note}"
+    markup = types.InlineKeyboardMarkup()
     if pay_link:
-        markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("💳 اضغط هنا للدفع", url=pay_link))
     with get_conn() as conn:
         conn.cursor().execute('DELETE FROM cart WHERE user_id=%s', (uid,))
     try:
-        bot.edit_message_text(reply, uid, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
+        bot.edit_message_text(reply, uid, call.message.message_id, reply_markup=markup)
     except Exception:
-        bot.send_message(uid, reply, parse_mode='Markdown', reply_markup=markup)
+        bot.send_message(uid, reply, reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == '📞 الدعم')
 def support(message):
