@@ -11,13 +11,15 @@ from contextlib import contextmanager
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', '0'))
 ENV = os.environ.get('ENV', 'production')
+
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
-# تنظيف رابط Neon من خيار قد يسبب خطأ اتصال
 DATABASE_URL = DATABASE_URL.replace('&channel_binding=require', '').replace('?channel_binding=require&', '?')
 
-bot = bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
-PENDING = {}  # تخزين مؤقت لخطوات إضافة المنتج
+
+PENDING = {}  # تخزين مؤقت لخطوات إضافة/تعديل المنتج
+
 
 # ==================== قاعدة البيانات (Neon) ====================
 @contextmanager
@@ -31,6 +33,7 @@ def get_conn():
         raise
     finally:
         conn.close()
+
 
 def init_db():
     try:
@@ -47,13 +50,23 @@ def init_db():
                 PRIMARY KEY (user_id, product_id))''')
             cur.execute('''CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY, value TEXT)''')
-            cur.execute('SELECT COUNT(*) AS c FROM categories')
+            cur.execute('''CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY, username TEXT, first_name TEXT,
+                joined_at TIMESTAMP DEFAULT NOW())''')
+            cur.execute('''CREATE TABLE IF NOT EXISTS orders (
+                id SERIAL PRIMARY KEY, user_id BIGINT, username TEXT,
+                items_text TEXT, total NUMERIC, status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT NOW())''')
+            cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
+
+            cur.execute('SELECT COUNT(*) FROM categories')
             if cur.fetchone()[0] == 0:
-                for nm, em, so in [('حسابات ألعاب','🎮',1),('اشتراكات','📱',2),('برامج','💻',3)]:
-                    cur.execute('INSERT INTO categories (name,emoji,sort_order) VALUES (%s,%s,%s)', (nm,em,so))
-        print("✅ Database initialized on Neon")
+                for nm, em, so in [('حسابات ألعاب', '🎮', 1), ('اشتراكات', '📱', 2), ('برامج', '💻', 3)]:
+                    cur.execute('INSERT INTO categories (name,emoji,sort_order) VALUES (%s,%s,%s)', (nm, em, so))
+            print("✅ Database initialized on Neon")
     except Exception as e:
         print("❌ DB init error:", e)
+
 
 def get_setting(key, default=''):
     try:
@@ -66,11 +79,13 @@ def get_setting(key, default=''):
         print('get_setting err', e)
         return default
 
+
 def set_setting(key, value):
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute('''INSERT INTO settings (key,value) VALUES (%s,%s)
                        ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value''', (key, str(value)))
+
 
 def fmt_price(p):
     try:
@@ -78,5 +93,120 @@ def fmt_price(p):
     except Exception:
         return str(p)
 
+
+# ==================== المشرفون ====================
+def get_extra_admin_ids():
+    raw = get_setting('extra_admins', '')
+    out = []
+    for part in raw.split(','):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+    return out
+
+
+def get_admin_ids():
+    ids = {ADMIN_ID}
+    ids.update(get_extra_admin_ids())
+    return [i for i in ids if i]
+
+
 def is_admin(uid):
-    return uid == ADMIN_ID
+    return uid in get_admin_ids()
+
+
+def add_extra_admin(uid):
+    ids = set(get_extra_admin_ids())
+    ids.add(int(uid))
+    set_setting('extra_admins', ','.join(str(i) for i in ids))
+
+
+def remove_extra_admin(uid):
+    ids = set(get_extra_admin_ids())
+    ids.discard(int(uid))
+    set_setting('extra_admins', ','.join(str(i) for i in ids))
+
+
+# ==================== المستخدمون ====================
+def add_user(uid, username, first_name):
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('''INSERT INTO users (user_id, username, first_name) VALUES (%s,%s,%s)
+                           ON CONFLICT (user_id) DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name''',
+                        (uid, username, first_name))
+    except Exception as e:
+        print('add_user err', e)
+
+
+def get_all_user_ids():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT user_id FROM users')
+            return [r[0] for r in cur.fetchall()]
+    except Exception as e:
+        print('get_all_user_ids err', e)
+        return []
+
+
+def count_users():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT COUNT(*) FROM users')
+            return cur.fetchone()[0]
+    except Exception:
+        return 0
+
+
+# ==================== الطلبات ====================
+def create_order(user_id, username, items_text, total):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('''INSERT INTO orders (user_id, username, items_text, total, status)
+                       VALUES (%s,%s,%s,%s,'pending') RETURNING id''', (user_id, username, items_text, total))
+        return cur.fetchone()[0]
+
+
+def get_order(order_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT id,user_id,username,items_text,total,status FROM orders WHERE id=%s', (order_id,))
+        return cur.fetchone()
+
+
+def set_order_status(order_id, status):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE orders SET status=%s WHERE id=%s', (status, order_id))
+
+
+def list_orders(status=None, limit=20):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if status:
+            cur.execute('''SELECT id,user_id,username,items_text,total,status FROM orders
+                           WHERE status=%s ORDER BY id DESC LIMIT %s''', (status, limit))
+        else:
+            cur.execute('''SELECT id,user_id,username,items_text,total,status FROM orders
+                           ORDER BY id DESC LIMIT %s''', (limit,))
+        return cur.fetchall()
+
+
+def list_orders_by_user(uid, limit=20):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('''SELECT id,items_text,total,status FROM orders
+                       WHERE user_id=%s ORDER BY id DESC LIMIT %s''', (uid, limit))
+        return cur.fetchall()
+
+
+def revenue_total():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COALESCE(SUM(total),0) FROM orders WHERE status='paid'")
+            return cur.fetchone()[0]
+    except Exception:
+        return 0
