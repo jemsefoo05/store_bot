@@ -5,6 +5,7 @@ from config import bot, app, ENV, BOT_TOKEN, init_db, get_conn
 import user_handlers
 import admin_categories
 import admin_products
+import admin_orders
 
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '').rstrip('/')
 
