@@ -1,4 +1,4 @@
-import os, time
+import os, time, traceback
 from flask import request
 from telebot import types as tb_types
 from config import bot, app, ENV, BOT_TOKEN, init_db, get_conn
@@ -18,8 +18,11 @@ def health():
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
-    update = tb_types.Update.de_json(request.get_json(force=True))
-    bot.process_new_updates([update])
+    try:
+        update = tb_types.Update.de_json(request.get_json(force=True))
+        bot.process_new_updates([update])
+    except Exception:
+        print("❌ WEBHOOK HANDLER ERROR:\n" + traceback.format_exc())
     return "ok", 200
 
 def init_db_safe():
