@@ -6,8 +6,12 @@ def _admin_menu():
     m = types.InlineKeyboardMarkup(row_width=1)
     m.add(types.InlineKeyboardButton("📂 إدارة الأقسام", callback_data="adm_cats"))
     m.add(types.InlineKeyboardButton("📦 إدارة المنتجات", callback_data="adm_prods"))
+    m.add(types.InlineKeyboardButton("🧾 الطلبات", callback_data="adm_orders"))
     m.add(types.InlineKeyboardButton("🏪 إعدادات المتجر", callback_data="adm_set"))
     m.add(types.InlineKeyboardButton("💳 إعدادات الدفع", callback_data="adm_pay"))
+    m.add(types.InlineKeyboardButton("📊 الإحصائيات", callback_data="adm_stats"))
+    m.add(types.InlineKeyboardButton("📢 بث رسالة", callback_data="adm_broadcast"))
+    m.add(types.InlineKeyboardButton("👤 المشرفون", callback_data="adm_admins"))
     return m
 
 @bot.message_handler(commands=['admin'])
