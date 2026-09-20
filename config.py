@@ -15,7 +15,7 @@ DATABASE_URL = os.environ.get('DATABASE_URL', '')
 # تنظيف رابط Neon من خيار قد يسبب خطأ اتصال
 DATABASE_URL = DATABASE_URL.replace('&channel_binding=require', '').replace('?channel_binding=require&', '?')
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 PENDING = {}  # تخزين مؤقت لخطوات إضافة المنتج
 
