@@ -6,16 +6,20 @@ import user_handlers
 import admin_categories
 import admin_products
 import admin_orders
+import wallet
 
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL', '').rstrip('/')
+
 
 @app.route('/')
 def home():
     return "Bot running on Neon via WEBHOOK 🤖"
 
+
 @app.route('/health')
 def health():
     return "OK", 200
+
 
 @app.route(f'/{BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
@@ -25,6 +29,7 @@ def telegram_webhook():
     except Exception:
         print("❌ WEBHOOK HANDLER ERROR:\n" + traceback.format_exc())
     return "ok", 200
+
 
 def init_db_safe():
     for attempt in range(4):
@@ -38,6 +43,7 @@ def init_db_safe():
             print(f"⚠️ DB not ready (try {attempt+1}): {e}")
             time.sleep(3)
     return False
+
 
 def setup_webhook():
     if not WEBHOOK_URL:
@@ -54,6 +60,7 @@ def setup_webhook():
             print(f"⚠️ set_webhook err: {e}")
         time.sleep(2)
     return False
+
 
 if ENV == 'production' and BOT_TOKEN:
     init_db_safe()
