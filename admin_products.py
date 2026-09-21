@@ -2,8 +2,6 @@ from telebot import types
 from config import (bot, get_conn, get_setting, set_setting, fmt_price, is_admin,
                      ADMIN_ID, PENDING)
 
-# ---------- المنتجات ----------
-
 def _prods_list_markup():
     with get_conn() as conn:
         cur = conn.cursor()
@@ -106,7 +104,6 @@ def pdy(call):
     _send_prods(call.message.chat.id)
 
 
-# ---- تعديل الاسم ----
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pename_'))
 def pename(call):
     if not is_admin(call.message.chat.id):
@@ -115,6 +112,7 @@ def pename(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "✏️ أرسل الاسم الجديد للمنتج:")
     bot.register_next_step_handler(call.message, save_pename, pid)
+
 
 def save_pename(message, pid):
     if not is_admin(message.chat.id):
@@ -125,7 +123,6 @@ def save_pename(message, pid):
     _send_prods(message.chat.id)
 
 
-# ---- تعديل السعر ----
 @bot.callback_query_handler(func=lambda c: c.data.startswith('peprice_'))
 def peprice(call):
     if not is_admin(call.message.chat.id):
@@ -134,6 +131,7 @@ def peprice(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "💰 أرسل السعر الجديد (رقم فقط):")
     bot.register_next_step_handler(call.message, save_peprice, pid)
+
 
 def save_peprice(message, pid):
     if not is_admin(message.chat.id):
@@ -149,7 +147,6 @@ def save_peprice(message, pid):
     _send_prods(message.chat.id)
 
 
-# ---- تعديل الوصف ----
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pedesc_'))
 def pedesc(call):
     if not is_admin(call.message.chat.id):
@@ -158,6 +155,7 @@ def pedesc(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "📝 أرسل الوصف الجديد (أو اكتب: لا لحذفه):")
     bot.register_next_step_handler(call.message, save_pedesc, pid)
+
 
 def save_pedesc(message, pid):
     if not is_admin(message.chat.id):
@@ -169,7 +167,6 @@ def save_pedesc(message, pid):
     _send_prods(message.chat.id)
 
 
-# ---- تغيير الصورة ----
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pephoto_'))
 def pephoto(call):
     if not is_admin(call.message.chat.id):
@@ -178,6 +175,7 @@ def pephoto(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "🖼 أرسل الصورة الجديدة (أو اكتب: حذف لإزالة الصورة):")
     bot.register_next_step_handler(call.message, save_pephoto, pid)
+
 
 def save_pephoto(message, pid):
     if not is_admin(message.chat.id):
@@ -195,7 +193,6 @@ def save_pephoto(message, pid):
     _send_prods(message.chat.id)
 
 
-# ---- تغيير القسم ----
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pecat_'))
 def pecat(call):
     if not is_admin(call.message.chat.id):
@@ -213,6 +210,7 @@ def pecat(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "📂 اختر القسم الجديد:", reply_markup=m)
 
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith('pesetcat_'))
 def pesetcat(call):
     if not is_admin(call.message.chat.id):
@@ -224,7 +222,6 @@ def pesetcat(call):
     _send_prods(call.message.chat.id)
 
 
-# إضافة منتج (خطوة بخطوة)
 @bot.callback_query_handler(func=lambda c: c.data == 'addprod')
 def addprod(call):
     if not is_admin(call.message.chat.id):
@@ -233,12 +230,14 @@ def addprod(call):
     bot.send_message(call.message.chat.id, "📝 1/5 أرسل اسم المنتج:")
     bot.register_next_step_handler(call.message, addprod_price)
 
+
 def addprod_price(message):
     if not is_admin(message.chat.id):
         return
     name = message.text.strip()
     bot.send_message(message.chat.id, "💰 2/5 أرسل سعر المنتج (رقم فقط):")
     bot.register_next_step_handler(message, addprod_desc, name)
+
 
 def addprod_desc(message, name):
     if not is_admin(message.chat.id):
@@ -250,6 +249,7 @@ def addprod_desc(message, name):
         return bot.register_next_step_handler(message, addprod_desc, name)
     bot.send_message(message.chat.id, "📝 3/5 أرسل وصف المنتج (أو اكتب: لا):")
     bot.register_next_step_handler(message, addprod_cat, name, price)
+
 
 def addprod_cat(message, name, price):
     if not is_admin(message.chat.id):
@@ -268,6 +268,7 @@ def addprod_cat(message, name, price):
         m.add(types.InlineKeyboardButton(f"{em} {nm}", callback_data=f"selcat_{cid}"))
     bot.send_message(message.chat.id, "📂 4/5 اختر قسم المنتج:", reply_markup=m)
 
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith('selcat_'))
 def selcat(call):
     if not is_admin(call.message.chat.id):
@@ -279,6 +280,7 @@ def selcat(call):
     data['cat'] = cid
     bot.answer_callback_query(call.id, "🖼 5/5 أرسل صورة المنتج الآن (أو اكتب: لا)")
     bot.register_next_step_handler(call.message, addprod_photo, data)
+
 
 def addprod_photo(message, data):
     if not is_admin(message.chat.id):
@@ -292,7 +294,6 @@ def addprod_photo(message, data):
     _send_prods(message.chat.id)
 
 
-# ---------- إعدادات المتجر ----------
 @bot.callback_query_handler(func=lambda c: c.data == 'adm_set')
 def adm_set(call):
     if not is_admin(call.message.chat.id):
@@ -305,6 +306,7 @@ def adm_set(call):
     m.add(types.InlineKeyboardButton("↩️ رجوع", callback_data="adm_home"))
     bot.edit_message_text(f"🏪 إعدادات المتجر\n\n🏷 الاسم: {sn}\n💬 الترحيب: {wt}", call.message.chat.id, call.message.message_id, reply_markup=m)
 
+
 @bot.callback_query_handler(func=lambda c: c.data == 'set_name')
 def set_name(call):
     if not is_admin(call.message.chat.id):
@@ -313,11 +315,13 @@ def set_name(call):
     bot.send_message(call.message.chat.id, "🏷 أرسل اسم المتجر الجديد:")
     bot.register_next_step_handler(call.message, save_name)
 
+
 def save_name(message):
     if not is_admin(message.chat.id):
         return
     set_setting('shop_name', message.text.strip())
     bot.send_message(message.chat.id, "✅ تم تحديث اسم المتجر")
+
 
 @bot.callback_query_handler(func=lambda c: c.data == 'set_welcome')
 def set_welcome(call):
@@ -327,6 +331,7 @@ def set_welcome(call):
     bot.send_message(call.message.chat.id, "💬 أرسل نص الترحيب (يظهر عند /start):")
     bot.register_next_step_handler(call.message, save_welcome)
 
+
 def save_welcome(message):
     if not is_admin(message.chat.id):
         return
@@ -334,18 +339,28 @@ def save_welcome(message):
     bot.send_message(message.chat.id, "✅ تم تحديث نص الترحيب")
 
 
-# ---------- إعدادات الدفع ----------
 @bot.callback_query_handler(func=lambda c: c.data == 'adm_pay')
 def adm_pay(call):
     if not is_admin(call.message.chat.id):
         return bot.answer_callback_query(call.id, "⛔️")
     pn = get_setting('payment_note', '(افتراضي)')
     pl = get_setting('payment_link', '(بدون رابط)')
+    bi = get_setting('binance_info', '(غير مضبوط)')
+    ui = get_setting('usdt_info', '(غير مضبوط)')
+    ci = get_setting('ccp_info', '(غير مضبوط)')
+    mt = get_setting('min_topup', '0.1')
     m = types.InlineKeyboardMarkup(row_width=1)
-    m.add(types.InlineKeyboardButton("✏️ تعديل تعليمات الدفع", callback_data="pay_note"))
-    m.add(types.InlineKeyboardButton("✏️ تعديل رابط الدفع", callback_data="pay_link"))
+    m.add(types.InlineKeyboardButton("✏️ تعليمات الدفع العامة", callback_data="pay_note"))
+    m.add(types.InlineKeyboardButton("✏️ رابط الدفع العام", callback_data="pay_link"))
+    m.add(types.InlineKeyboardButton("🟡 بيانات Binance Pay", callback_data="set_binance_info"))
+    m.add(types.InlineKeyboardButton("💵 عنوان USDT", callback_data="set_usdt_info"))
+    m.add(types.InlineKeyboardButton("🏤 بيانات بريدي موب CCP", callback_data="set_ccp_info"))
+    m.add(types.InlineKeyboardButton("🔢 الحد الأدنى للشحن", callback_data="set_min_topup"))
     m.add(types.InlineKeyboardButton("↩️ رجوع", callback_data="adm_home"))
-    bot.edit_message_text(f"💳 إعدادات الدفع\n\n📄 التعليمات: {pn}\n🔗 الرابط: {pl}", call.message.chat.id, call.message.message_id, reply_markup=m)
+    text = (f"💳 إعدادات الدفع\n\n📄 التعليمات: {pn}\n🔗 الرابط: {pl}\n\n"
+            f"🟡 Binance Pay: {bi}\n💵 USDT: {ui}\n🏤 CCP: {ci}\n🔢 الحد الأدنى للشحن: {mt}$")
+    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=m)
+
 
 @bot.callback_query_handler(func=lambda c: c.data == 'pay_note')
 def pay_note(call):
@@ -355,11 +370,13 @@ def pay_note(call):
     bot.send_message(call.message.chat.id, "📄 أرسل تعليمات الدفع (تظهر للعميل بعد الشراء):")
     bot.register_next_step_handler(call.message, save_pay_note)
 
+
 def save_pay_note(message):
     if not is_admin(message.chat.id):
         return
     set_setting('payment_note', message.text.strip())
     bot.send_message(message.chat.id, "✅ تم تحديث تعليمات الدفع")
+
 
 @bot.callback_query_handler(func=lambda c: c.data == 'pay_link')
 def pay_link(call):
@@ -369,9 +386,79 @@ def pay_link(call):
     bot.send_message(call.message.chat.id, "🔗 أرسل رابط الدفع (أو اكتب: لا لإزالته):")
     bot.register_next_step_handler(call.message, save_pay_link)
 
+
 def save_pay_link(message):
     if not is_admin(message.chat.id):
         return
     val = '' if message.text.strip() in ('لا', 'no') else message.text.strip()
     set_setting('payment_link', val)
     bot.send_message(message.chat.id, "✅ تم تحديث رابط الدفع")
+
+
+@bot.callback_query_handler(func=lambda c: c.data == 'set_binance_info')
+def set_binance_info(call):
+    if not is_admin(call.message.chat.id):
+        return
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "🟡 أرسل معلومات استقبال Binance Pay (مثال: Binance ID: 123456789):")
+    bot.register_next_step_handler(call.message, save_binance_info)
+
+
+def save_binance_info(message):
+    if not is_admin(message.chat.id):
+        return
+    set_setting('binance_info', message.text.strip())
+    bot.send_message(message.chat.id, "✅ تم الحفظ")
+
+
+@bot.callback_query_handler(func=lambda c: c.data == 'set_usdt_info')
+def set_usdt_info(call):
+    if not is_admin(call.message.chat.id):
+        return
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "💵 أرسل عنوان محفظة USDT مع الشبكة (مثال: TRC20: TXXXXXXX):")
+    bot.register_next_step_handler(call.message, save_usdt_info)
+
+
+def save_usdt_info(message):
+    if not is_admin(message.chat.id):
+        return
+    set_setting('usdt_info', message.text.strip())
+    bot.send_message(message.chat.id, "✅ تم الحفظ")
+
+
+@bot.callback_query_handler(func=lambda c: c.data == 'set_ccp_info')
+def set_ccp_info(call):
+    if not is_admin(call.message.chat.id):
+        return
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "🏤 أرسل رقم الحساب البريدي CCP واسم صاحبه:")
+    bot.register_next_step_handler(call.message, save_ccp_info)
+
+
+def save_ccp_info(message):
+    if not is_admin(message.chat.id):
+        return
+    set_setting('ccp_info', message.text.strip())
+    bot.send_message(message.chat.id, "✅ تم الحفظ")
+
+
+@bot.callback_query_handler(func=lambda c: c.data == 'set_min_topup')
+def set_min_topup(call):
+    if not is_admin(call.message.chat.id):
+        return
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "🔢 أرسل الحد الأدنى لمبلغ الشحن (رقم بالدولار):")
+    bot.register_next_step_handler(call.message, save_min_topup)
+
+
+def save_min_topup(message):
+    if not is_admin(message.chat.id):
+        return
+    try:
+        val = float(message.text.strip())
+    except ValueError:
+        bot.send_message(message.chat.id, "⚠️ أرسل رقمًا صحيحًا.")
+        return
+    set_setting('min_topup', str(val))
+    bot.send_message(message.chat.id, "✅ تم الحفظ")
