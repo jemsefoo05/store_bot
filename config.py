@@ -18,7 +18,7 @@ DATABASE_URL = DATABASE_URL.replace('&channel_binding=require', '').replace('?ch
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 app = Flask(__name__)
 
-PENDING = {}  # تخزين مؤقت لخطوات إضافة/تعديل المنتج
+PENDING = {}  # تخزين مؤقت لخطوات الإضافة/التعديل متعددة الخطوات
 
 
 # ==================== قاعدة البيانات (Neon) ====================
@@ -57,7 +57,11 @@ def init_db():
                 id SERIAL PRIMARY KEY, user_id BIGINT, username TEXT,
                 items_text TEXT, total NUMERIC, status TEXT DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT NOW())''')
+            cur.execute('''CREATE TABLE IF NOT EXISTS topups (
+                id SERIAL PRIMARY KEY, user_id BIGINT, method TEXT, amount NUMERIC,
+                proof TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW())''')
             cur.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS balance NUMERIC DEFAULT 0")
 
             cur.execute('SELECT COUNT(*) FROM categories')
             if cur.fetchone()[0] == 0:
@@ -160,6 +164,16 @@ def count_users():
         return 0
 
 
+def get_user_info(uid):
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT user_id, username, first_name, balance FROM users WHERE user_id=%s', (uid,))
+            return cur.fetchone()
+    except Exception:
+        return None
+
+
 # ==================== الطلبات ====================
 def create_order(user_id, username, items_text, total):
     with get_conn() as conn:
@@ -207,6 +221,75 @@ def revenue_total():
         with get_conn() as conn:
             cur = conn.cursor()
             cur.execute("SELECT COALESCE(SUM(total),0) FROM orders WHERE status='paid'")
+            return cur.fetchone()[0]
+    except Exception:
+        return 0
+
+
+# ==================== الرصيد ====================
+def get_balance(uid):
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT balance FROM users WHERE user_id=%s', (uid,))
+            row = cur.fetchone()
+            return float(row[0]) if row and row[0] is not None else 0.0
+    except Exception as e:
+        print('get_balance err', e)
+        return 0.0
+
+
+def add_balance(uid, amount):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE users SET balance = COALESCE(balance,0) + %s WHERE user_id=%s', (amount, uid))
+
+
+def deduct_balance(uid, amount):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE users SET balance = COALESCE(balance,0) - %s WHERE user_id=%s', (amount, uid))
+
+
+# ==================== طلبات شحن الرصيد ====================
+def create_topup(uid, method, amount, proof):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('''INSERT INTO topups (user_id,method,amount,proof,status)
+                       VALUES (%s,%s,%s,%s,'pending') RETURNING id''', (uid, method, amount, proof))
+        return cur.fetchone()[0]
+
+
+def get_topup(tid):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('SELECT id,user_id,method,amount,proof,status FROM topups WHERE id=%s', (tid,))
+        return cur.fetchone()
+
+
+def set_topup_status(tid, status):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE topups SET status=%s WHERE id=%s', (status, tid))
+
+
+def list_topups(status=None, limit=20):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        if status:
+            cur.execute('''SELECT id,user_id,method,amount,proof,status FROM topups
+                           WHERE status=%s ORDER BY id DESC LIMIT %s''', (status, limit))
+        else:
+            cur.execute('''SELECT id,user_id,method,amount,proof,status FROM topups
+                           ORDER BY id DESC LIMIT %s''', (limit,))
+        return cur.fetchall()
+
+
+def topup_revenue_total():
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COALESCE(SUM(amount),0) FROM topups WHERE status='approved'")
             return cur.fetchone()[0]
     except Exception:
         return 0
