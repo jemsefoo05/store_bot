@@ -1,9 +1,8 @@
 from telebot import types
 from config import (bot, is_admin, ADMIN_ID, get_order, set_order_status, list_orders,
-                     count_users, revenue_total, get_all_user_ids, get_admin_ids,
-                     get_extra_admin_ids, add_extra_admin, remove_extra_admin, fmt_price)
-
-# ---------- أزرار تأكيد/رفض الطلب السريعة ----------
+                     count_users, revenue_total, topup_revenue_total, get_all_user_ids,
+                     get_admin_ids, get_extra_admin_ids, add_extra_admin, remove_extra_admin,
+                     fmt_price, get_user_info, list_orders_by_user, get_balance)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith('ord_ok_'))
 def ord_ok(call):
@@ -51,7 +50,6 @@ def ord_no(call):
         pass
 
 
-# ---------- قائمة الطلبات المعلقة من لوحة التحكم ----------
 @bot.callback_query_handler(func=lambda c: c.data == 'adm_orders')
 def adm_orders(call):
     if not is_admin(call.message.chat.id):
@@ -71,7 +69,27 @@ def adm_orders(call):
         bot.send_message(call.message.chat.id, text, reply_markup=kb)
 
 
-# ---------- الإحصائيات ----------
+@bot.message_handler(commands=['order'])
+def order_lookup_cmd(message):
+    if not is_admin(message.chat.id):
+        return
+    parts = message.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return bot.send_message(message.chat.id, "الاستخدام: /order <رقم الطلب>")
+    order = get_order(int(parts[1]))
+    if not order:
+        return bot.send_message(message.chat.id, "❌ الطلب غير موجود.")
+    oid, uid, uname, items_text, total, status = order
+    status_ar = {'pending': '⏳ قيد المراجعة', 'paid': '✅ مؤكد', 'cancelled': '❌ ملغي'}
+    text = (f"🧾 طلب #{oid}\n👤 @{uname or uid} (ID: {uid})\n"
+            f"📦:\n{items_text}\n💰 {fmt_price(total)}$\nالحالة: {status_ar.get(status, status)}")
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    if status == 'pending':
+        kb.add(types.InlineKeyboardButton("✅ تأكيد", callback_data=f"ord_ok_{oid}"),
+               types.InlineKeyboardButton("❌ رفض", callback_data=f"ord_no_{oid}"))
+    bot.send_message(message.chat.id, text, reply_markup=kb if status == 'pending' else None)
+
+
 @bot.callback_query_handler(func=lambda c: c.data == 'adm_stats')
 def adm_stats(call):
     if not is_admin(call.message.chat.id):
@@ -81,21 +99,23 @@ def adm_stats(call):
     pending_n = sum(1 for o in all_orders if o[5] == 'pending')
     paid_n = sum(1 for o in all_orders if o[5] == 'paid')
     cancelled_n = sum(1 for o in all_orders if o[5] == 'cancelled')
-    revenue = revenue_total()
+    orders_revenue = revenue_total()
+    topups_revenue = topup_revenue_total()
+    total_revenue = float(orders_revenue) if orders_revenue else 0.0
     text = (f"📊 إحصائيات المتجر\n\n"
             f"👥 المستخدمون: {users_n}\n"
             f"🧾 إجمالي الطلبات: {len(all_orders)}\n"
             f"⏳ معلقة: {pending_n}\n"
             f"✅ مؤكدة: {paid_n}\n"
-            f"❌ ملغاة: {cancelled_n}\n"
-            f"💵 إجمالي المبيعات المؤكدة: {fmt_price(revenue)}$")
+            f"❌ ملغاة: {cancelled_n}\n\n"
+            f"💵 مبيعات الطلبات المؤكدة: {fmt_price(total_revenue)}$\n"
+            f"💰 إجمالي شحن الرصيد المقبول: {fmt_price(topups_revenue)}$")
     m = types.InlineKeyboardMarkup()
     m.add(types.InlineKeyboardButton("↩️ رجوع", callback_data="adm_home"))
     bot.answer_callback_query(call.id)
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=m)
 
 
-# ---------- بث رسالة لكل المستخدمين ----------
 @bot.callback_query_handler(func=lambda c: c.data == 'adm_broadcast')
 def adm_broadcast(call):
     if not is_admin(call.message.chat.id):
@@ -103,6 +123,7 @@ def adm_broadcast(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "📢 أرسل الرسالة التي تريد بثها لكل المستخدمين:")
     bot.register_next_step_handler(call.message, do_broadcast)
+
 
 def do_broadcast(message):
     if not is_admin(message.chat.id):
@@ -119,7 +140,6 @@ def do_broadcast(message):
     bot.send_message(message.chat.id, f"✅ تم الإرسال إلى {sent} من أصل {len(ids)} مستخدم.")
 
 
-# ---------- إدارة المشرفين ----------
 @bot.callback_query_handler(func=lambda c: c.data == 'adm_admins')
 def adm_admins(call):
     if not is_admin(call.message.chat.id):
@@ -136,6 +156,7 @@ def adm_admins(call):
     bot.answer_callback_query(call.id)
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=m)
 
+
 @bot.callback_query_handler(func=lambda c: c.data == 'admadd')
 def admadd(call):
     if not is_admin(call.message.chat.id):
@@ -143,6 +164,7 @@ def admadd(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "أرسل رقم آيدي المستخدم (يمكنه معرفته عبر @userinfobot):")
     bot.register_next_step_handler(call.message, save_admadd)
+
 
 def save_admadd(message):
     if not is_admin(message.chat.id):
@@ -153,6 +175,7 @@ def save_admadd(message):
         return
     add_extra_admin(txt)
     bot.send_message(message.chat.id, f"✅ تمت إضافة {txt} كمشرف.")
+
 
 @bot.callback_query_handler(func=lambda c: c.data == 'admrem')
 def admrem(call):
@@ -166,6 +189,7 @@ def admrem(call):
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "اختر المشرف لإزالته:", reply_markup=m)
 
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith('admrm_'))
 def admrm(call):
     if not is_admin(call.message.chat.id):
@@ -174,3 +198,35 @@ def admrm(call):
     remove_extra_admin(uid)
     bot.answer_callback_query(call.id, "✅ تمت الإزالة")
     bot.send_message(call.message.chat.id, f"✅ تمت إزالة {uid} من المشرفين.")
+
+
+@bot.callback_query_handler(func=lambda c: c.data == 'adm_search')
+def adm_search(call):
+    if not is_admin(call.message.chat.id):
+        return bot.answer_callback_query(call.id, "⛔️")
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, "🔍 أرسل رقم آيدي العميل (User ID):")
+    bot.register_next_step_handler(call.message, do_search)
+
+
+def do_search(message):
+    if not is_admin(message.chat.id):
+        return
+    txt = message.text.strip()
+    if not txt.isdigit():
+        return bot.send_message(message.chat.id, "⚠️ أرسل رقماً صحيحاً.")
+    uid = int(txt)
+    info = get_user_info(uid)
+    if not info:
+        return bot.send_message(message.chat.id, "❌ لا يوجد عميل بهذا الآيدي.")
+    _, username, first_name, balance = info
+    orders = list_orders_by_user(uid, limit=10)
+    lines = [f"👤 {first_name or ''} (@{username or '-'})", f"🆔 {uid}", f"💰 الرصيد: {fmt_price(balance or 0)}$", ""]
+    if orders:
+        status_ar = {'pending': '⏳', 'paid': '✅', 'cancelled': '❌'}
+        lines.append("🧾 آخر الطلبات:")
+        for oid, items_text, total, status in orders:
+            lines.append(f"#{oid} — {fmt_price(total)}$ — {status_ar.get(status, status)}")
+    else:
+        lines.append("لا توجد طلبات سابقة.")
+    bot.send_message(message.chat.id, "\n".join(lines))
