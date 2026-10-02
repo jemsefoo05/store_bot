@@ -1,6 +1,8 @@
 import os
 import asyncio
 import logging
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 import db
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction
@@ -16,6 +18,22 @@ from telegram.ext import (
 
 logging.basicConfig(level=logging.INFO)
 
+# --- خادم ويب خفيف لإرضاء فحص Render للمنافذ ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is healthy and running!")
+
+    def log_message(self, format, *args):
+        return  # لمنع ملء السجلات بطلبات فحص Render
+
+def run_health_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
 # --- جلب المتغيرات من البيئة ---
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
@@ -27,7 +45,6 @@ STORE_BANNER_URL = os.getenv(
     "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80"
 )
 
-# حالات المحادثات
 WAITING_QTY = 1
 WAITING_WARRANTY_VIDEO = 20
 
@@ -111,7 +128,7 @@ async def show_tutorials(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "────────────────────\n\n"
         "1️⃣ **كيف أستلم طلبي؟**\n"
         "• التسليم فوري وتلقائي بمجرد الدفع، وستجد بيانات طلبك في الشات ومحفوظة دائماً في قسم (طلباتي 📦).\n\n"
-        "2️⃣ **شروط الضمان والاستبدال 🛡️:**\n"
+        "2️⃣ **شروط الضمان والاستبدال 🛡️️:**\n"
         "• **هام جداً:** يجب بدء تصوير شاشة بالفيديو **من لحظة استلام الكود في البوت** وحتى التجربة مباشرة دون إيقاف مؤقت، لضمان استبداله فوراً في حال وجود أي خلل.\n"
         "• بدون هذا التوثيق المستمر، لا يتم قبول أي بلاغ استبدال نهائياً.\n\n"
         "3️⃣ **طرق شحن الرصيد:**\n"
@@ -157,7 +174,7 @@ async def show_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     balance = db.get_user_balance(query.from_user.id)
     text = f"💰 **رصيدك الحالي:** USDT {balance:.2f}"
     keyboard = [[InlineKeyboardButton("🟦 الرئيسية 🏠", callback_data="back_to_home")]]
-    await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def show_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -233,7 +250,7 @@ async def view_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("رجوع ⬅️", callback_data="show_catalog"), InlineKeyboardButton("🟦 الرئيسية 🏠", callback_data="back_to_home")]
         ]
 
-    await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def register_alert_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -511,7 +528,6 @@ async def admin_add_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ تم إضافة `${amount:.2f}` لرصيد المستخدم `{uid}`.")
 
 async def admin_new_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # الصيغة: /newprod <code_name> <name> <price> [bulk20] [bulk50]
     if not is_admin(update.effective_user.id) or len(context.args) < 3:
         await update.message.reply_text("الصيغة: `/newprod <code_name> <الاسم> <السعر> [سعر_20] [سعر_50]`", parse_mode="Markdown")
         return
@@ -524,7 +540,6 @@ async def admin_new_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ تم إنشاء المنتج `{name}` بنجاح!")
 
 async def admin_add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # الصيغة: /addstock <code_name> <item1> <item2> ...
     if not is_admin(update.effective_user.id) or len(context.args) < 2:
         await update.message.reply_text("الصيغة: `/addstock <code_name> <كود1> <كود2> ...`", parse_mode="Markdown")
         return
@@ -536,9 +551,11 @@ async def admin_add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     db.init_db()
 
+    # تشغيل خادم المنفذ في الخلفية لإرضاء Render Web Service
+    threading.Thread(target=run_health_server, daemon=True).start()
+
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # محادثة الشراء
     buy_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_buy, pattern=r"^buy_")],
         states={
@@ -547,7 +564,6 @@ def main():
         fallbacks=[CallbackQueryHandler(cancel_order, pattern="^cancel_order$")]
     )
 
-    # محادثة الضمان المشروط بالفيديو
     warranty_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_warranty_claim, pattern=r"^claim_")],
         states={
@@ -564,7 +580,6 @@ def main():
     app.add_handler(buy_conv)
     app.add_handler(warranty_conv)
 
-    # معالجات الأزرار
     app.add_handler(CallbackQueryHandler(start, pattern="^back_to_home$"))
     app.add_handler(CallbackQueryHandler(catalog, pattern="^show_catalog$"))
     app.add_handler(CallbackQueryHandler(view_product, pattern=r"^prod_"))
